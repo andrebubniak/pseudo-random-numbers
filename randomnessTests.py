@@ -18,7 +18,7 @@ class randomnessTests():
             cumulative_array.append(array[i] + cumulative_array[i-1])
         return cumulative_array
 
-    def __kolmogorov_smirnov(self, observed_frequency: List[int], expected_probability: List[float]):
+    def __kolmogorov_smirnov(self, observed_frequency: List[int], expected_probability: List[float], debug: bool = False):
 
         observed_frequency_total = sum(observed_frequency)
         observed_probability = [f / observed_frequency_total for f in observed_frequency]
@@ -29,21 +29,26 @@ class randomnessTests():
         kolmogorov_smirnov_5percent = 1.36/numpy.sqrt(sum(observed_frequency))
         kolmogorov_smirnov_calculated = max([abs(expected_cumulative_probability[i] - observed_cumulative_probability[i]) for i in range(len(observed_cumulative_probability))])
 
+        if debug:
+            for a in ([abs(expected_cumulative_probability[i] - observed_cumulative_probability[i]) for i in range(len(observed_cumulative_probability))]):
+                print('ks -> ', a)
+
         return (kolmogorov_smirnov_calculated < kolmogorov_smirnov_5percent)
 
 
-    def uniformity_test(self):
+    def uniformity_test(self, precision: int = 1):
         data_array = self.data.copy()
-        if(data_array) == None:
-            return
 
-        return self.__kolmogorov_smirnov(numpy.histogram(a=data_array, range=[0,1])[0], [1/10 for i in range(1, 11)])
+        if(precision < 1): precision = 1
+        if(precision > 1000): precision = 1000
+
+        num_classes = 10 * precision
+
+        return self.__kolmogorov_smirnov(numpy.histogram(a=data_array, range=[0,1])[0], [1/num_classes for i in range(num_classes)])
 
 
     def runs_test(self):
         data_array = self.data.copy()
-        if(data_array) == None:
-            return
 
         def compute_runs(data_array, ascending = True):
             if(len(data_array) < 2): return
@@ -84,14 +89,48 @@ class randomnessTests():
         return self.__kolmogorov_smirnov(observed_frequency_ascending, expected_probability_ascending) and self.__kolmogorov_smirnov(observed_frequency_descending, expected_probability_descending)
 
 
-    def gap_test(self, num_decimal_places: int = 1):
+    def gap_test(self, num_decimal_places: int = 1, digit: int = 1):
         data_array = self.data.copy()
-        if(data_array) == None:
-            return
 
-        if(num_decimal_places < 1): num_decimal_places = 1
+        if(num_decimal_places < 1 or num_decimal_places == None): num_decimal_places = 1
 
-        digits = []
+        #digits = []
+
+        gap_dict = {'0':[], '1':[], '2':[], '3':[], '4':[],
+            '5':[], '6':[], '7':[], '8':[], '9':[]}
+
+        gap_count = [0] * 10
+
+
+        #for i in range(len(data_array)):
+
+
+        '''
+        for i in range(len(data_array)):
+            digits_str = str(data_array[i]).replace('.', '')
+            if(len(digits_str) < (num_decimal_places + 1)):
+                current_digit = 0
+            else:
+                current_digit = int(digits_str[num_decimal_places])
+
+            for d in range(10):
+                if(d != current_digit):
+                    gap_count[d] = gap_count[d] + 1
+
+            key = str(current_digit)
+            gap_dict[key] = gap_dict[key] + [gap_count[current_digit]]
+            gap_count[current_digit] = 0
+
+
+
+        #adiciona os ultimos intervalos, depois que percorre a lista
+        for i in range(10):
+            gap_dict[str(i)] = gap_dict[str(i)] + [gap_count[i]]
+
+        '''
+
+
+        '''
         for n in data_array:
             digits_str = str(n).replace('.', '')
             if(len(digits_str) < (num_decimal_places + 1)):
@@ -119,7 +158,7 @@ class randomnessTests():
                 for i in range(10):
                     gap_dict[str(i)] = gap_dict[str(i)] + [gap_count[i]]
 
-
+        '''
         def compute_gaps(digit):
             intervals = [i for i in range(max(gap_dict[str(digit)]) + 1)]
 
@@ -130,7 +169,7 @@ class randomnessTests():
                 observed_frequency.append(gap_dict[str(digit)].count(n))
                 expected_probability.append(pow(0.9, n)*0.1) 
 
-            return self.__kolmogorov_smirnov(observed_frequency, expected_probability)
+            return self.__kolmogorov_smirnov(observed_frequency, expected_probability, (digit == 5))
 
         results = []
         for i in range(10):
@@ -141,8 +180,6 @@ class randomnessTests():
 
     def permutations_test(self, interval_size = 3):
         data_array = self.data.copy()
-        if(data_array) == None:
-            return
 
         def compute_permutations(data: list, interval_size):
             data2 = data
