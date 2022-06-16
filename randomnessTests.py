@@ -2,6 +2,12 @@ import itertools
 import math
 import numpy
 from typing import List
+import openpyxl as xl
+import openpyxl.chart.bar_chart as barChart
+import openpyxl.chart.line_chart as lineChart
+import openpyxl.chart.reference as reference
+import openpyxl.chart.series as series
+
 
 
 class randomnessTests():
@@ -18,7 +24,7 @@ class randomnessTests():
             cumulative_array.append(array[i] + cumulative_array[i-1])
         return cumulative_array
 
-    def __kolmogorov_smirnov(self, observed_frequency: List[int], expected_probability: List[float], debug: bool = False):
+    def __kolmogorov_smirnov(self, observed_frequency: List[int], expected_probability: List[float]):
 
         observed_frequency_total = sum(observed_frequency)
         observed_probability = [f / observed_frequency_total for f in observed_frequency]
@@ -26,28 +32,66 @@ class randomnessTests():
         observed_cumulative_probability = self.__accumulate_array(observed_probability)
         expected_cumulative_probability = self.__accumulate_array(expected_probability)
 
-        kolmogorov_smirnov_5percent = 1.36/numpy.sqrt(sum(observed_frequency))
+        kolmogorov_smirnov_5percent = 1.63/numpy.sqrt(sum(observed_frequency))
         kolmogorov_smirnov_calculated = max([abs(expected_cumulative_probability[i] - observed_cumulative_probability[i]) for i in range(len(observed_cumulative_probability))])
-
-        if debug:
-            for a in ([abs(expected_cumulative_probability[i] - observed_cumulative_probability[i]) for i in range(len(observed_cumulative_probability))]):
-                print('ks -> ', a)
 
         return (kolmogorov_smirnov_calculated < kolmogorov_smirnov_5percent)
 
 
-    def uniformity_test(self, precision: int = 1):
+    def uniformity_test(self, precision: int = 1, spreadsheet: bool = False, spreadsheet_title: str = 'uniformidade'):
         data_array = self.data.copy()
 
         if(precision < 1): precision = 1
         if(precision > 1000): precision = 1000
 
         num_classes = 10 * precision
+        expected_probability = [1/num_classes for i in range(num_classes)]
+        observed_frequency = numpy.histogram(a=data_array, range=[0,1], bins=num_classes)[0]
+        expected_frequency = [n * len(data_array) for n in expected_probability]
+        classes = self.__accumulate_array(expected_probability)
 
-        return self.__kolmogorov_smirnov(numpy.histogram(a=data_array, range=[0,1])[0], [1/num_classes for i in range(num_classes)])
+        #excel
+        if(spreadsheet):
+            wb = xl.Workbook()
+            sheet = wb['Sheet']
+
+            sheet.__setattr__('title', 'Corridas Ascendente')
+
+            sheet.append(['classes', 'Frequência Observada', 'Frequência Esperada'])
+            sheet.column_dimensions['B'].width = 21
+            sheet.column_dimensions['C'].width = 19
+
+            for i in range(num_classes):
+                sheet.cell(row = (i+2), column = 1, value=classes[i])
+                sheet.cell(row = (i+2), column = 2, value=observed_frequency[i])
+                sheet.cell(row = (i+2), column = 3, value=expected_frequency[i])
+
+            chart1 = lineChart.LineChart()
+            chart1.title = 'Teste de Uniformidade'
+            chart1.y_axis.title = 'Frequência'
+            chart1.x_axis.title = 'Classes'
+
+            graph_row = str(len(classes) + 5)
+
+            data = reference.Reference(sheet, min_col=2, min_row=2, max_row=len(classes)+1, max_col=3)
+            cats = reference.Reference(sheet, min_col=1, min_row=2, max_row=len(classes)+1)
+            chart1.add_data(data)
+            chart1.set_categories(cats)
+            chart1.shape = 4
+            chart1.series[0].title = series.SeriesLabel(v='Frequência Observada')
+            chart1.series[1].title = series.SeriesLabel(v='Frequência Esperada')
+            chart1.width = 30
+            chart1.height = 15
+            sheet.add_chart(chart1, 'A' + graph_row)
+
+            wb.save(spreadsheet_title + '.xlsx')   
 
 
-    def runs_test(self):
+
+        return self.__kolmogorov_smirnov(observed_frequency, expected_probability)
+
+
+    def runs_test(self, spreadsheet: bool = False, spreadsheet_title: str = 'corridas'):
         data_array = self.data.copy()
 
         def compute_runs(data_array, ascending = True):
@@ -84,28 +128,84 @@ class randomnessTests():
 
         expected_probability_ascending = [n/math.factorial(n + 1) for n in num_ascending_runs]
         expected_probability_descending = [n/math.factorial(n + 1) for n in num_descending_runs]
+
         
+        #grafico
+        expected_frequency_ascending = [round(n*sum(observed_frequency_ascending)) for n in expected_probability_ascending]
+        expected_frequency_descending = [round(n*sum(observed_frequency_descending)) for n in expected_probability_descending]
+
+
+        def data_to_excel(title: str, ascending: bool, sheet):
+            sheet.append(['classes', 'Frequência Observada', 'Frequência Esperada'])
+            sheet.column_dimensions['B'].width = 21
+            sheet.column_dimensions['C'].width = 19
+
+            if(ascending):
+                classes = num_ascending_runs
+                obs_freq = observed_frequency_ascending
+                expected_freq = expected_frequency_ascending
+            
+            else:
+                classes = num_descending_runs
+                obs_freq = observed_frequency_descending
+                expected_freq = expected_frequency_descending
+
+            for i in range(len(classes)):
+                sheet.cell(row = (i+2), column = 1, value=classes[i])
+                sheet.cell(row = (i+2), column = 2, value=obs_freq[i])
+                sheet.cell(row = (i+2), column = 3, value=expected_freq[i])
+
+            chart1 = barChart.BarChart()
+            chart1.type = "col"
+            chart1.style = 10 
+            chart1.title = title
+            chart1.y_axis.title = 'Frequência'
+            chart1.x_axis.title = 'Classes'
+
+
+            graph_row = str(len(classes) + 5)
+
+            data = reference.Reference(sheet, min_col=2, min_row=2, max_row=len(classes)+1, max_col=3)
+            cats = reference.Reference(sheet, min_col=1, min_row=2, max_row=len(classes)+1)
+            chart1.add_data(data)
+            chart1.set_categories(cats)
+            chart1.shape = 4
+            chart1.series[0].title = series.SeriesLabel(v='Frequência Observada')
+            chart1.series[1].title = series.SeriesLabel(v='Frequência Esperada')
+            chart1.width = 30
+            chart1.height = 15
+            sheet.add_chart(chart1, 'A' + graph_row)
+
+
+        if(spreadsheet):
+            wb = xl.Workbook()
+            sheet = wb['Sheet']
+
+            sheet.__setattr__('title', 'Corridas Ascendente')
+
+            data_to_excel('Corridas Ascendente', True, sheet)
+            data_to_excel('Corridas Descendente', False, wb.create_sheet('Corridas Descendente'))
+
+            wb.save(spreadsheet_title + '.xlsx')
+
+
         
         return self.__kolmogorov_smirnov(observed_frequency_ascending, expected_probability_ascending) and self.__kolmogorov_smirnov(observed_frequency_descending, expected_probability_descending)
 
 
-    def gap_test(self, num_decimal_places: int = 1, digit: int = 1):
+    def gap_test(self, num_decimal_places: int = 1, digit: int = 0, spreadsheet: bool = False, spreadsheet_title: str = 'intervalos'):
         data_array = self.data.copy()
 
         if(num_decimal_places < 1 or num_decimal_places == None): num_decimal_places = 1
 
-        #digits = []
+        if(digit < 0 or digit == None): digit = 0
 
-        gap_dict = {'0':[], '1':[], '2':[], '3':[], '4':[],
-            '5':[], '6':[], '7':[], '8':[], '9':[]}
+        if(digit > 9): digit = 9
 
-        gap_count = [0] * 10
-
-
-        #for i in range(len(data_array)):
+        gap_count = 0
+        gaps = []
 
 
-        '''
         for i in range(len(data_array)):
             digits_str = str(data_array[i]).replace('.', '')
             if(len(digits_str) < (num_decimal_places + 1)):
@@ -113,72 +213,87 @@ class randomnessTests():
             else:
                 current_digit = int(digits_str[num_decimal_places])
 
-            for d in range(10):
-                if(d != current_digit):
-                    gap_count[d] = gap_count[d] + 1
-
-            key = str(current_digit)
-            gap_dict[key] = gap_dict[key] + [gap_count[current_digit]]
-            gap_count[current_digit] = 0
-
-
-
-        #adiciona os ultimos intervalos, depois que percorre a lista
-        for i in range(10):
-            gap_dict[str(i)] = gap_dict[str(i)] + [gap_count[i]]
-
-        '''
-
-
-        '''
-        for n in data_array:
-            digits_str = str(n).replace('.', '')
-            if(len(digits_str) < (num_decimal_places + 1)):
-                digits.append(0)
+            if(current_digit == digit):
+                gaps.append(gap_count)
+                gap_count = 0
             else:
-                digits.append(int(digits_str[num_decimal_places]))
-        
-
-        gap_dict = {'0':[], '1':[], '2':[], '3':[], '4':[],
-                    '5':[], '6':[], '7':[], '8':[], '9':[]}
-
-        gap_count = [0] * 10
-
-        for n in range(len(digits)):
-            for i in range(10):
-                if(i != digits[n]):
-                    gap_count[i] = gap_count[i] + 1
-
-            key = str(digits[n])
-            gap_dict[key] = gap_dict[key] + [gap_count[digits[n]]]
-            gap_count[digits[n]] = 0
-
-            # se for o ultimo numero, adiciona os valores dos intervalos
-            if(n == len(digits)-1):
-                for i in range(10):
-                    gap_dict[str(i)] = gap_dict[str(i)] + [gap_count[i]]
-
-        '''
-        def compute_gaps(digit):
-            intervals = [i for i in range(max(gap_dict[str(digit)]) + 1)]
-
-            observed_frequency = []
-            expected_probability = []
-
-            for n in intervals:
-                observed_frequency.append(gap_dict[str(digit)].count(n))
-                expected_probability.append(pow(0.9, n)*0.1) 
-
-            return self.__kolmogorov_smirnov(observed_frequency, expected_probability, (digit == 5))
-
-        results = []
-        for i in range(10):
-            results.append(compute_gaps(i))
-        
-        return all(results)
+                gap_count += 1
 
 
-    def permutations_test(self, interval_size = 3):
+        gaps.append(gap_count)
+
+        intervals = [i for i in range(max(gaps)+1)]
+
+        observed_frequency = []
+        expected_probability = []
+
+        for n in intervals:
+            observed_frequency.append(gaps.count(n))
+            expected_probability.append(pow(0.9, n)*0.1)  
+
+        if(spreadsheet):
+            observed_probability = [n/sum(observed_frequency) for n in observed_frequency]
+
+            merge_intervals_max = max(gaps)
+            merged_intervals_str = []
+            mod_difference_count = 0
+            merged_intervals_observed = [] #probabilidade observada mergida (10 a 10)
+            merged_intervals_expected = [] #probabilidade esperada mergida (10 a 10)
+
+            while(merge_intervals_max % 10 != 0):
+                merge_intervals_max += 1
+                mod_difference_count += 1
+
+            for i in range(int(merge_intervals_max/10)-1):
+                merged_intervals_str.append(str(i*10) + ' - ' + str(i*10+9))
+                merged_intervals_observed.append( sum((observed_probability[(i*10):(i*10+9+1)])) )
+                merged_intervals_expected.append( sum((expected_probability[(i*10):(i*10+9+1)])) )  
+
+            merged_intervals_str.append(str(merge_intervals_max - 10) + ' - ' + str(merge_intervals_max - mod_difference_count))
+            merged_intervals_observed.append( sum(observed_probability[(merge_intervals_max - 10):(merge_intervals_max - mod_difference_count+1)]))
+            merged_intervals_expected.append( sum(expected_probability[(merge_intervals_max - 10):(merge_intervals_max - mod_difference_count+1)]))
+
+            wb = xl.Workbook()
+            sheet = wb['Sheet']
+
+            sheet.__setattr__('title', 'Intervalos - Digito ' + str(digit))
+
+            sheet.append(['Intervalos', 'Probabilidade Observada', 'Probabilidade Esperada'])
+            sheet.column_dimensions['B'].width = 21
+            sheet.column_dimensions['C'].width = 19
+
+            for i in range(len(merged_intervals_str)):
+                sheet.cell(row = (i+2), column = 1, value=merged_intervals_str[i])
+                sheet.cell(row = (i+2), column = 2, value=merged_intervals_observed[i])
+                sheet.cell(row = (i+2), column = 3, value=merged_intervals_expected[i])
+
+            chart1 = barChart.BarChart()
+            chart1.type = "col"
+            chart1.style = 10 
+            chart1.title = 'Teste de Intervalos - Digito ' + str(digit)
+            chart1.y_axis.title = 'Probabilidade'
+            chart1.x_axis.title = 'Intervalos'
+
+            graph_row = str(len(merged_intervals_str) + 5)
+
+            data = reference.Reference(sheet, min_col=2, min_row=2, max_row=len(merged_intervals_str)+1, max_col=3)
+            cats = reference.Reference(sheet, min_col=1, min_row=2, max_row=len(merged_intervals_str)+1)
+            chart1.add_data(data)
+            chart1.set_categories(cats)
+            chart1.shape = 4
+            chart1.series[0].title = series.SeriesLabel(v='Probabilidade Observada')
+            chart1.series[1].title = series.SeriesLabel(v='Probabilidade Esperada')
+            chart1.width = 30
+            chart1.height = 15
+            sheet.add_chart(chart1, 'A' + graph_row)
+
+            wb.save(spreadsheet_title + '.xlsx')
+
+                
+        return self.__kolmogorov_smirnov(observed_frequency, expected_probability)
+
+
+    def permutations_test(self, interval_size = 3, spreadsheet: bool = False, spreadsheet_title: str = 'permutacoes'):
         data_array = self.data.copy()
 
         def compute_permutations(data: list, interval_size):
@@ -206,6 +321,46 @@ class randomnessTests():
 
         observed_frequency = compute_permutations(data_array, interval_size)
         expected_probability = [(1/math.factorial(interval_size))] * len(observed_frequency)
+        observed_probability = [n / sum(observed_frequency) for n in observed_frequency]
+
+        if(spreadsheet):
+            wb = xl.Workbook()
+            sheet = wb['Sheet']
+
+            sheet.__setattr__('title', 'Permutações')
+
+            funcoes = ['fO' + str(i) for i in range(1, len(observed_frequency)+1)]
+            
+            sheet.append(['classes', 'Probabilidade Observada', 'Probabilidade Esperada'])
+            sheet.column_dimensions['B'].width = 21
+            sheet.column_dimensions['C'].width = 19
+
+            for i in range(len(funcoes)):
+                sheet.cell(row = (i+2), column = 1, value=funcoes[i])
+                sheet.cell(row = (i+2), column = 2, value=observed_probability[i])
+                sheet.cell(row = (i+2), column = 3, value=expected_probability[i])
+
+            chart1 = barChart.BarChart()
+            chart1.type = "col"
+            chart1.style = 10 
+            chart1.title = 'Teste de Permutações'
+            chart1.y_axis.title = 'Probabilidade'
+            chart1.x_axis.title = 'Funções'
+
+            graph_row = str(len(funcoes) + 5)
+
+            data = reference.Reference(sheet, min_col=2, min_row=2, max_row=len(funcoes)+1, max_col=3)
+            cats = reference.Reference(sheet, min_col=1, min_row=2, max_row=len(funcoes)+1)
+            chart1.add_data(data)
+            chart1.set_categories(cats)
+            chart1.shape = 4
+            chart1.series[0].title = series.SeriesLabel(v='Probabilidade Observada')
+            chart1.series[1].title = series.SeriesLabel(v='Probabilidade Esperada')
+            chart1.width = 30
+            chart1.height = 15
+            sheet.add_chart(chart1, 'A' + graph_row)
+
+            wb.save(spreadsheet_title + '.xlsx')
         
 
         return self.__kolmogorov_smirnov(observed_frequency, expected_probability)
